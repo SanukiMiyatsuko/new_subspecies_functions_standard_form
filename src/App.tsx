@@ -7,7 +7,7 @@ function App() {
   const [inputA, setInputA] = useState("");
   const [inputB, setInputB] = useState("");
   const [select, setSelect] = useState("");
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState("出力：");
   const [outputError, setOutputError] = useState("");
 
   const compute = (str: string) => {
