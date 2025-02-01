@@ -1,6 +1,7 @@
-import { T, PT, AT, Z, ONE_S, OMEGA_S, IOTA_S, LOMEGA_S, sanitize_plus_term, subs } from "./code";
+import { T, PT, Z, ONE_S, OMEGA_S, IOTA_S, LOMEGA_S, sanitize_plus_term, subs } from "./code";
 
-function from_nat(num: number): PT | AT {
+function from_nat(num: number): T {
+    if (num === 0) return Z;
     const numterm: PT[] = [];
     while (num > 0) {
         numterm.push(ONE_S);
@@ -41,13 +42,6 @@ export class Scanner {
         return true;
     }
 
-    consumeStrHead(): boolean {
-        const ch = this.str[this.pos];
-        if (ch !== "a" && ch !== "亜") return false;
-        this.pos += 1;
-        return true;
-    }
-
     // 次の文字が期待した文字なら1文字進める。
     // 次の文字が期待した文字でないなら例外を投げる。
     expect(op: string): void {
@@ -61,49 +55,31 @@ export class Scanner {
         this.pos += 1;
     }
 
+    parse_number(): T {
+        let num = parseInt(this.str[this.pos]);
+        this.pos += 1;
+        while (is_numchar(this.str[this.pos])) {
+            num = num * 10 + parseInt(this.str[this.pos]);
+            this.pos += 1;
+        }
+        return from_nat(num);
+    }
+
     // 式をパース
     parse_term(): T {
         if (this.str === "") throw Error(`Empty string`);
         if (this.consume("0")) {
             return Z;
-        } else if (is_numchar(this.str[this.pos])) {
-            // 0以外の数字にマッチ
-            let list: PT[] = [];
-            const num_start = this.pos;
-            let num_end = num_start;
-            while (is_numchar(this.str[num_end])) {
-                num_end += 1;
-            }
-            const num = parseInt(this.str.slice(num_start, num_end + 1));
-            this.pos = num_end;
-            const fn = from_nat(num);
-            if (fn.type === "plus") list = list.concat(fn.add);
-            else list.push(fn);
-            while (this.consume("+")) {
-                const term = this.parse_term();
-                if (term.type === "zero") {
-                    throw Error(`0は+で接続できません`);
-                } else if (term.type === "plus") {
-                    list = list.concat(term.add);
-                } else {
-                    list.push(term);
-                }
-            }
-            return sanitize_plus_term(list);
         } else {
             let list: PT[] = [];
-            const first = this.parse_principal();
-            list.push(first);
-            while (this.consume("+")) {
-                const term = this.parse_term();
-                if (term.type === "zero") {
-                    throw Error(`0は+で接続できません`);
-                } else if (term.type === "plus") {
-                    list = list.concat(term.add);
-                } else {
-                    list.push(term);
-                }
-            }
+            do {
+                let term: T;
+                if (is_numchar(this.str[this.pos])) term = this.parse_number();
+                else term = this.parse_principal();
+                if (term.type === "zero") throw Error(`0は+で接続できません`);
+                else if (term.type === "plus") list = list.concat(term.add);
+                else list.push(term);
+            } while (this.consume("+"));
             return sanitize_plus_term(list);
         }
     }
@@ -119,40 +95,41 @@ export class Scanner {
         } else if (this.consume("I")) {
             return IOTA_S;
         } else {
-            this.consumeStrHead();
             const argarr: T[] = [];
-            if (this.consume("(")) {
-                const term = this.parse_term();
-                argarr.push(term);
-                if (this.consume(")")) return subs(argarr);
-                this.expect(",");
-            } else if (this.consume("_")) {
-                if (this.consume("{")) {
-                    const term = this.parse_term();
-                    argarr.push(term);
+            let sub: T;
+            if (this.consume("a") || this.consume("亜")) {
+                if (this.consume("(")) {
+                    sub = this.parse_term();
+                    if (this.consume(")")) return subs([sub]);
+                    this.expect(",");
+                } else {
+                    this.consume("_");
+                    if (this.consume("{")) {
+                        sub = this.parse_term();
+                        this.expect("}");
+                        this.expect("(");
+                    } else {
+                        sub = this.parse_term();
+                        this.expect("(");
+                    }
+                }
+            } else {
+                if (this.consume("(")) {
+                    sub = this.parse_term();
+                    if (this.consume(")")) return subs([sub]);
+                    this.expect(",");
+                } else {
+                    this.expect("{");
+                    sub = this.parse_term();
                     this.expect("}");
                     this.expect("(");
-                } else {
-                    const term = this.parse_term();
-                    argarr.push(term);
-                    this.expect("(");
                 }
-            } else if (this.consume("{")) {
-                const term = this.parse_term();
-                argarr.push(term);
-                this.expect("}");
-                this.expect("(");
-            } else {
-                const term = this.parse_term();
-                argarr.push(term);
-                this.expect("(");
             }
-            const arg = this.parse_term();
-            argarr.push(arg);
-            while (this.consume(",")) {
+            argarr.push(sub);
+            do {
                 const term = this.parse_term();
                 argarr.push(term);
-            }
+            } while (this.consume(","));
             this.expect(")");
             return subs(argarr.reverse());
         }
